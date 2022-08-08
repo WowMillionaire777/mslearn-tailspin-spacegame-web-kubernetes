@@ -1,9 +1,12 @@
-trigger: none
+trigger: 
+- "main"
 
 variables:
   buildConfiguration: 'Release'
+  leaderboardRepository: 'leaderboard'
   webRepository: 'web'
   tag: '$(Build.BuildId)'
+  imagePullSecret: 'secret'
 
 stages:
 - stage: 'Build'
@@ -21,9 +24,21 @@ stages:
         buildContext: $(Build.Repository.LocalPath)
         repository: $(webRepository)
         dockerfile: '$(Build.SourcesDirectory)/Tailspin.SpaceGame.Web/Dockerfile'
-        containerRegistry: 'Container Registry Connection'
+        containerRegistry: 'Google Container Registry'
         tags: |
           $(tag)
+    - task: Docker@2
+      displayName: 'Build and push the leaderboard image to container registry'
+      inputs:
+        command: buildAndPush
+        buildContext: $(Build.Repository.LocalPath)
+        repository: $(leaderboardRepository)
+        dockerfile: '$(Build.SourcesDirectory)/Tailspin.SpaceGame.LeaderboardContainer/Dockerfile'
+        containerRegistry: 'Google Container Registry'
+        tags: |
+          $(tag)
+    - publish: '$(Build.SourcesDirectory)/manifests'
+      artifact: manifests
 
 - stage: 'Deploy'
   displayName: 'Deploy the container'
@@ -36,8 +51,9 @@ stages:
     variables:
     - group: Release
     steps:
-    - task: AzureWebAppContainer@1
+    - task: KubernetesManifest@0
       inputs:
-       appName: $(WebAppName)
-       azureSubscription: 'Resource Manager - Tailspin - Space Game'
-       imageName: $(RegistryName)/$(webRepository):$(build.buildId)
+        action: 'deploy'
+        kubernetesServiceConnection: 'azure-pipelines-cicd-dev'
+        namespace: 'default'
+        manifests: 'manifest/drop/deployment.yaml'
